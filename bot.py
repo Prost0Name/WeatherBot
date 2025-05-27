@@ -12,6 +12,7 @@ from weather import get_weather, get_weather_by_coords, get_weather_forecast, cr
 from notifications import send_weather_notifications
 from database.users import add_user, update_user_city, update_user_notification_time, delete_user_notifications
 from keyboards import get_start_keyboard, get_back_keyboard, get_weather_keyboard, get_forecast_keyboard, get_graph_keyboard, get_main_keyboard
+import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -176,9 +177,14 @@ async def process_city(message: Message, state: FSMContext):
             message.from_user.id, city
         )
 
+        # Получаем текущее время сервера
+        current_time = datetime.datetime.now().strftime("%H:%M")
+        
         await message.answer(
-            f"Отлично! Город {city} установлен."
-            "Теперь укажите время для ежедневных уведомлений в формате ЧЧ:ММ (например, 08:00)"
+            f"Отлично! Город <b>{city}</b> установлен.\n\n"
+            "Теперь укажите время для ежедневных уведомлений в формате ЧЧ:ММ (например, 08:00)\n\n"
+            f"<i><b>Текущее время на сервере: {current_time}</b></i>",
+            parse_mode="HTML"
         )
         await state.set_state(Status.waiting_for_time)
     except Exception as e:
