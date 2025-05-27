@@ -1,4 +1,7 @@
 import aiohttp
+import matplotlib.pyplot as plt
+import io
+from datetime import datetime
 from config import OPENWEATHER_API_KEY, OPENWEATHER_API_URL, OPENWEATHER_FORECAST_URL
 
 async def get_weather(city: str) -> str:
@@ -114,3 +117,46 @@ async def get_weather_forecast(city: str) -> str:
                 )
             
             return forecast_text
+
+async def create_temperature_graph(city: str) -> bytes:
+    params = {
+        'q': city,
+        'appid': OPENWEATHER_API_KEY,
+        'units': 'metric',
+        'lang': 'ru'
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(OPENWEATHER_FORECAST_URL, params=params) as response:
+            if response.status != 200:
+                raise Exception(f"Не удалось получить прогноз погоды. Код ошибки: {response.status}")
+            
+            data = await response.json()
+            
+            # Создаем списки для данных
+            times = []
+            temps = []
+            
+            # Собираем данные
+            for item in data['list']:
+                dt = datetime.strptime(item['dt_txt'], '%Y-%m-%d %H:%M:%S')
+                times.append(dt)
+                temps.append(item['main']['temp'])
+            
+            # Создаем график
+            plt.figure(figsize=(12, 6))
+            plt.plot(times, temps, marker='o')
+            plt.title(f'Прогноз температуры в городе {city}')
+            plt.xlabel('Время')
+            plt.ylabel('Температура (°C)')
+            plt.grid(True)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            
+            # Сохраняем график в байты
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png')
+            buf.seek(0)
+            plt.close()
+            
+            return buf.getvalue()

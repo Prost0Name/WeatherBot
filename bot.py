@@ -1,17 +1,17 @@
 import asyncio
 import logging
 import re
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN
-from weather import get_weather, get_weather_by_coords, get_weather_forecast
+from weather import get_weather, get_weather_by_coords, get_weather_forecast, create_temperature_graph
 from notifications import send_weather_notifications
 from database.users import add_user, update_user_city, update_user_notification_time, delete_user_notifications
-from keyboards import get_start_keyboard, get_back_keyboard, get_weather_keyboard
+from keyboards import get_start_keyboard, get_back_keyboard, get_weather_keyboard, get_forecast_keyboard, get_graph_keyboard
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -76,9 +76,9 @@ async def process_about_callback(callback: CallbackQuery):
     await callback.answer()
 
 
-@dp.callback_query(F.data == "back_to_start")
-async def process_back_callback(callback: CallbackQuery):
-    start_text = ("""
+@dp.callback_query(lambda c: c.data == "back_to_start")
+async def process_back_callback(callback_query: types.CallbackQuery):
+    start_text = """
 👋 Привет! Я покажу погоду сейчас и на неделю вперёд — по городу или геолокации.
 
 📍 Отправь локацию или
@@ -88,10 +88,10 @@ async def process_back_callback(callback: CallbackQuery):
 ❌ Отключить её — тоже легко.
 
 Выбери нужную кнопку ниже 👇
-""")
+"""
     
-    await callback.message.edit_text(start_text, reply_markup=get_start_keyboard())
-    await callback.answer()
+    await callback_query.message.edit_text(start_text, reply_markup=get_start_keyboard())
+    await callback_query.answer()
 
 
 @dp.message(
@@ -202,15 +202,69 @@ async def cmd_delete_notifications(message: Message, state: FSMContext):
         await state.set_state(Status.waiting_moment_city)
 
 
-@dp.callback_query(F.data.startswith("forecast_"))
-async def process_forecast_callback(callback: CallbackQuery):
-    city = callback.data.replace("forecast_", "")
+@dp.callback_query(lambda c: c.data.startswith('forecast_'))
+async def process_forecast_callback(callback_query: types.CallbackQuery):
+    city = callback_query.data.split('_')[1]
     try:
-        forecast_text = await get_weather_forecast(city)
-        await callback.message.edit_text(forecast_text, reply_markup=get_back_keyboard())
-        await callback.answer()
+        forecast = await get_weather_forecast(city)
+        # Удаляем предыдущее сообщение
+        await callback_query.message.delete()
+        # Отправляем новое сообщение с прогнозом
+        await bot.send_message(
+            chat_id=callback_query.from_user.id,
+            text=forecast,
+            reply_markup=get_forecast_keyboard(city)
+        )
     except Exception as e:
-        await callback.answer("Не удалось получить прогноз погоды", show_alert=True)
+        await bot.send_message(
+            chat_id=callback_query.from_user.id,
+            text=f"Не удалось получить прогноз погоды: {str(e)}",
+            reply_markup=get_back_keyboard()
+        )
+
+
+@dp.callback_query(lambda c: c.data.startswith('detailed_forecast_'))
+async def process_detailed_forecast_callback(callback_query: types.CallbackQuery):
+    city = callback_query.data.split('_')[2]
+    try:
+        # Создаем график
+        graph_bytes = await create_temperature_graph(city)
+        
+        # Удаляем предыдущее сообщение
+        await callback_query.message.delete()
+        
+        # Отправляем график как фото
+        await callback_query.message.answer_photo(
+            photo=types.BufferedInputFile(graph_bytes, filename="temperature_graph.png"),
+            caption=f"📊 График температуры в городе {city}",
+            reply_markup=get_graph_keyboard(city)
+        )
+    except Exception as e:
+        await callback_query.message.edit_text(
+            text=f"Не удалось создать график: {str(e)}",
+            reply_markup=get_forecast_keyboard(city)
+        )
+
+
+@dp.callback_query(lambda c: c.data.startswith('back_to_weather_'))
+async def process_back_to_weather_callback(callback_query: types.CallbackQuery):
+    city = callback_query.data.split('_')[3]
+    try:
+        weather_data = await get_weather(city)
+        # Удаляем предыдущее сообщение
+        await callback_query.message.delete()
+        # Отправляем новое сообщение с погодой
+        await bot.send_message(
+            chat_id=callback_query.from_user.id,
+            text=weather_data,
+            reply_markup=get_weather_keyboard(city)
+        )
+    except Exception as e:
+        await bot.send_message(
+            chat_id=callback_query.from_user.id,
+            text=f"Не удалось получить погоду: {str(e)}",
+            reply_markup=get_back_keyboard()
+        )
 
 
 async def setup():

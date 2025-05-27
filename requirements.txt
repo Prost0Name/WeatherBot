@@ -1,4 +1,6 @@
-aiogram
+aiogram>=3.0.0
 python-dotenv
 tortoise-orm
 asyncpg
+aiohttp
+matplotlib>=3.7.0
