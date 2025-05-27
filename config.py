@@ -10,6 +10,7 @@ POSTGRES_URI = os.getenv("POSTGRES_URI")
 OPENWEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
 OPENWEATHER_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 
+print(POSTGRES_URI)
 if not BOT_TOKEN:
     raise ValueError("Не задана переменная окружения BOT_TOKEN")
     
