@@ -8,10 +8,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN
-from weather import get_weather, get_weather_by_coords, get_weather_forecast, create_temperature_graph
+from weather import get_weather, get_weather_by_coords, get_weather_forecast, create_temperature_graph, get_weather_forecast_by_coords
 from notifications import send_weather_notifications
 from database.users import add_user, update_user_city, update_user_notification_time, delete_user_notifications
-from keyboards import get_start_keyboard, get_back_keyboard, get_weather_keyboard, get_forecast_keyboard, get_graph_keyboard
+from keyboards import get_start_keyboard, get_back_keyboard, get_weather_keyboard, get_forecast_keyboard, get_graph_keyboard, get_main_keyboard
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,7 +36,8 @@ async def cmd_start(message: Message, state: FSMContext):
         last_name=message.from_user.last_name
     )
 
-    await message.answer ("""
+    # Отправляем приветственное сообщение с инлайн-кнопкой
+    await message.answer("""
 👋 Привет! Я покажу погоду сейчас и на неделю вперёд — по городу или геолокации.
 
 📍 Отправь локацию или
@@ -49,6 +50,13 @@ async def cmd_start(message: Message, state: FSMContext):
 """,
         reply_markup=get_start_keyboard()
     )
+
+    # Отправляем сообщение с основной клавиатурой
+    await message.answer(
+        "Используйте кнопки ниже для навигации:",
+        reply_markup=get_main_keyboard()
+    )
+    
     await state.set_state(Status.waiting_moment_city)
 
 
@@ -130,11 +138,20 @@ async def handle_location(message: Message, state: FSMContext):
     lon = message.location.longitude      
 
     try:
+        # Сохраняем координаты в состоянии
+        await state.update_data(lat=lat, lon=lon)
+        logger.info(f"Сохранены координаты: lat={lat}, lon={lon}")
+        
         weather_text = await get_weather_by_coords(lat, lon)
+        # Сохраняем название города из ответа API
+        city_name = weather_text.split('(')[1].split(')')[0]
+        await state.update_data(city_name=city_name)
+        logger.info(f"Сохранено название города: {city_name}")
+        
         await message.answer(weather_text, reply_markup=get_weather_keyboard("вашем городе"))
-        await state.clear()
         await state.set_state(Status.waiting_moment_city)
     except Exception as e:
+        logger.error(f"Ошибка при обработке геолокации: {e}")
         await message.answer("😢 Не смог получить погоду для этой точки")
         await state.clear()
         await state.set_state(Status.waiting_moment_city)
@@ -203,19 +220,38 @@ async def cmd_delete_notifications(message: Message, state: FSMContext):
 
 
 @dp.callback_query(lambda c: c.data.startswith('forecast_'))
-async def process_forecast_callback(callback_query: types.CallbackQuery):
+async def process_forecast_callback(callback_query: types.CallbackQuery, state: FSMContext):
     city = callback_query.data.split('_')[1]
     try:
-        forecast = await get_weather_forecast(city)
+        if city == "вашем городе":
+            # Получаем данные из состояния
+            data = await state.get_data()
+            lat = data.get('lat')
+            lon = data.get('lon')
+            city_name = data.get('city_name')
+            
+            logger.info(f"Получены данные из состояния: lat={lat}, lon={lon}, city_name={city_name}")
+            
+            if lat and lon:
+                forecast = await get_weather_forecast_by_coords(lat, lon)
+                # Обновляем клавиатуру с правильным названием города
+                keyboard = get_forecast_keyboard(city_name)
+            else:
+                raise Exception("Не удалось получить координаты")
+        else:
+            forecast = await get_weather_forecast(city)
+            keyboard = get_forecast_keyboard(city)
+            
         # Удаляем предыдущее сообщение
         await callback_query.message.delete()
         # Отправляем новое сообщение с прогнозом
         await bot.send_message(
             chat_id=callback_query.from_user.id,
             text=forecast,
-            reply_markup=get_forecast_keyboard(city)
+            reply_markup=keyboard
         )
     except Exception as e:
+        logger.error(f"Ошибка при получении прогноза: {e}")
         await bot.send_message(
             chat_id=callback_query.from_user.id,
             text=f"Не удалось получить прогноз погоды: {str(e)}",

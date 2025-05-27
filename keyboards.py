@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
 def get_start_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -6,6 +6,18 @@ def get_start_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="ℹ️ Узнать больше о боте", callback_data="about_bot")]
         ]
     )
+
+def get_main_keyboard() -> ReplyKeyboardMarkup:
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📍 Отправить геолокацию", request_location=True),
+            KeyboardButton(text="🏙 Ввести город")],
+            [KeyboardButton(text="🔔 Ежедневное уведомление"),
+            KeyboardButton(text="❌ Удалить ежедневное уведомление")]
+        ],
+        resize_keyboard=True
+    )
+    return keyboard
 
 def get_back_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
